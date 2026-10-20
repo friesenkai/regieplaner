@@ -1,2 +1,2 @@
 # regieplaner
-Visualisierung eines Regieabluafes
+Visualisierung eines Regieablaufes
