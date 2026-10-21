@@ -134,6 +134,9 @@
       gap: 48px;
     }
 
+    .workspace.live-mode { grid-template-columns: minmax(0, 1fr); }
+    .side-panel[hidden] { display: none; }
+
     .section-heading {
       display: flex;
       align-items: center;
@@ -163,7 +166,7 @@
     .mode-button.live { border-color: var(--orange); color: #a64b2c; background: #fff8f3; }
     .mode-button.live:hover { color: white; background: #a64b2c; }
 
-    .task-list { display: grid; gap: 10px; }
+    .task-list { display: grid; gap: 0; }
 
     .task-card {
       position: relative;
@@ -179,9 +182,28 @@
       animation: arrive 260ms ease-out both;
     }
 
+    .task-card.color-blue { background: #eaf2fc; }
+    .task-card.color-green { background: #e8f3ec; }
+    .task-card.color-yellow { background: #fff5d9; }
+    .task-card.color-orange { background: #fff0e6; }
+    .task-card.color-pink { background: #f9eaf0; }
+    .task-card.color-violet { background: #f0ecfa; }
+
+    .task-card:not(.current):not(.completed) {
+      width: calc(100% - 24px);
+      justify-self: center;
+      border-radius: 0;
+    }
+
+    .task-card:not(.current):not(.completed) + .task-card:not(.current):not(.completed) {
+      border-top: 0;
+    }
+
     .task-card.current {
       min-height: 104px;
-      border-color: var(--green);
+      margin-bottom: 12px;
+      border: 2px solid #c62828;
+      border-radius: 7px;
       box-shadow: var(--shadow);
     }
 
@@ -236,6 +258,63 @@
       color: var(--ink);
       background: transparent;
       font: inherit;
+    }
+
+    .task-note {
+      margin: 8px 0 0;
+      color: #48534d;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .task-note[hidden] { display: none; }
+
+    .task-edit-details {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .task-note-input {
+      width: 100%;
+      min-height: 54px;
+      padding: 7px 9px;
+      resize: vertical;
+      border: 1px solid rgba(24, 35, 33, 0.16);
+      border-radius: 4px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.72);
+      font: inherit;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .task-note-input:focus,
+    .task-color-select:focus {
+      border-color: var(--green);
+      outline: 2px solid rgba(23, 105, 77, 0.12);
+    }
+
+    .task-color-control {
+      display: grid;
+      gap: 4px;
+      color: var(--muted);
+      font-size: 10px;
+    }
+
+    .task-color-select {
+      min-height: 32px;
+      padding: 0 6px;
+      border: 1px solid rgba(24, 35, 33, 0.16);
+      border-radius: 4px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.8);
+      font: inherit;
+      font-size: 11px;
     }
 
     .scheduled-time-display {
@@ -431,6 +510,9 @@
       .storage-note { display: none; }
       .task-card { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 14px 12px; }
       .task-card.current { min-height: 96px; }
+      .task-card:not(.current):not(.completed) { width: calc(100% - 16px); }
+      .task-edit-details { grid-template-columns: minmax(0, 1fr); }
+      .task-color-control { max-width: 180px; }
       .task-index { width: 31px; height: 31px; }
       .icon-button { width: 30px; height: 30px; }
       .task-actions { grid-column: 2; justify-content: flex-end; flex-wrap: wrap; }
@@ -520,6 +602,16 @@
 
   <script>
     const STORAGE_KEY = "regieplan-livestream-v1";
+    const taskColors = ["default", "blue", "green", "yellow", "orange", "pink", "violet"];
+    const taskColorLabels = {
+      default: "Weiß",
+      blue: "Blau",
+      green: "Grün",
+      yellow: "Gelb",
+      orange: "Orange",
+      pink: "Rosa",
+      violet: "Violett"
+    };
     const starterTasks = [
       { id: "welcome", title: "Begrüßung & Stream-Start" },
       { id: "intro", title: "Thema und Ablauf vorstellen" },
@@ -529,6 +621,7 @@
     ];
 
     const elements = {
+      workspace: document.querySelector(".workspace"),
       list: document.querySelector("#task-list"),
       historyList: document.querySelector("#history-list"),
       history: document.querySelector("#history"),
@@ -543,6 +636,7 @@
       systemClock: document.querySelector("#system-clock"),
       showName: document.querySelector("#page-title"),
       modeButton: document.querySelector("#mode-button"),
+      sidePanel: document.querySelector(".side-panel"),
       transferActions: document.querySelector(".transfer-actions"),
       storageNote: document.querySelector(".storage-note")
     };
@@ -566,6 +660,8 @@
       task.scheduledTime = normalizeClockTime(task.scheduledTime);
       task.scheduleTriggered = task.scheduleTriggered === true;
       task.planNumber = Number.isInteger(task.planNumber) && task.planNumber > 0 ? task.planNumber : null;
+      task.color = taskColors.includes(task.color) ? task.color : "default";
+      task.note = typeof task.note === "string" ? task.note.slice(0, 1000) : "";
     }
     delete state.schedule;
     let draggedTaskId = null;
@@ -581,7 +677,8 @@
 
     function makeTaskCard(task, index, completed = false) {
       const card = document.createElement("article");
-      card.className = `task-card${index === 0 && !completed ? " current" : ""}${completed ? " completed" : ""}`;
+      const isCurrent = index === 0 && !completed;
+      card.className = `task-card${isCurrent ? " current" : ""}${completed ? " completed" : ""} color-${task.color}`;
       if (!completed && state.mode === "edit") {
         card.draggable = true;
         card.title = "Zum Sortieren ziehen";
@@ -598,6 +695,12 @@
       title.className = "task-title";
       title.textContent = task.title;
       copy.append(title);
+
+      const note = document.createElement("p");
+      note.className = "task-note";
+      note.textContent = task.note;
+      note.hidden = !task.note || (state.mode !== "live" && !completed);
+      copy.append(note);
 
       const scheduledTime = document.createElement("div");
       scheduledTime.className = "scheduled-time-display";
@@ -645,6 +748,44 @@
         });
         copy.append(titleInput);
         actions.append(rename);
+
+        const editDetails = document.createElement("div");
+        editDetails.className = "task-edit-details";
+        const noteInput = document.createElement("textarea");
+        noteInput.className = "task-note-input";
+        noteInput.maxLength = 1000;
+        noteInput.placeholder = "Notiz für die Live-Anzeige";
+        noteInput.value = task.note;
+        noteInput.setAttribute("aria-label", `Notiz zu „${task.title}“`);
+        noteInput.addEventListener("input", () => {
+          task.note = noteInput.value;
+          note.textContent = task.note;
+          note.hidden = !task.note || state.mode !== "live";
+          saveState();
+        });
+
+        const colorLabel = document.createElement("label");
+        colorLabel.className = "task-color-control";
+        colorLabel.append(document.createTextNode("Kartenfarbe"));
+        const colorSelect = document.createElement("select");
+        colorSelect.className = "task-color-select";
+        colorSelect.setAttribute("aria-label", `Kartenfarbe für „${task.title}“`);
+        taskColors.forEach((color) => {
+          const option = document.createElement("option");
+          option.value = color;
+          option.textContent = taskColorLabels[color];
+          option.selected = task.color === color;
+          colorSelect.append(option);
+        });
+        colorSelect.addEventListener("change", () => {
+          task.color = colorSelect.value;
+          taskColors.forEach((color) => card.classList.remove(`color-${color}`));
+          card.classList.add(`color-${task.color}`);
+          saveState();
+        });
+        colorLabel.append(colorSelect);
+        editDetails.append(noteInput, colorLabel);
+        copy.append(editDetails);
 
         const scheduleLabel = document.createElement("label");
         scheduleLabel.className = "schedule-control";
@@ -815,7 +956,7 @@
         empty.className = "empty-state";
         empty.textContent = state.completed.length
           ? "Der Ablauf ist geschafft. Füge eine neue Aufgabe hinzu, um weiterzumachen."
-          : "Noch keine Aufgaben im Ablauf. Füge rechts den ersten Programmpunkt hinzu.";
+          : "Noch keine Aufgaben im Ablauf. Füge im Bearbeitungsmodus den ersten Programmpunkt hinzu.";
         elements.list.append(empty);
       } else {
         state.pending.forEach((task, index) => elements.list.append(makeTaskCard(task, index)));
@@ -829,6 +970,8 @@
       elements.exportButton.disabled = state.pending.length + state.completed.length === 0;
       elements.modeButton.textContent = state.mode === "live" ? "Bearbeitungsmodus öffnen" : "Live-Modus starten";
       elements.modeButton.classList.toggle("live", state.mode === "live");
+      elements.workspace.classList.toggle("live-mode", state.mode === "live");
+      elements.sidePanel.hidden = state.mode === "live";
       elements.form.hidden = state.mode === "live";
       elements.transferActions.hidden = state.mode === "live";
       elements.storageNote.hidden = state.mode === "live";
@@ -896,11 +1039,13 @@
       const tasks = [...state.completed].reverse().concat(state.pending).map((task) => ({
         title: task.title,
         scheduleEnabled: task.scheduleEnabled === true,
-        scheduledTime: task.scheduledTime || ""
+        scheduledTime: task.scheduledTime || "",
+        color: taskColors.includes(task.color) ? task.color : "default",
+        note: typeof task.note === "string" ? task.note : ""
       }));
       const payload = {
         format: "regieplan-tasks",
-        version: 3,
+        version: 4,
         exportedAt: new Date().toISOString(),
         showName: state.showName,
         tasks
@@ -928,19 +1073,17 @@
       elements.importFile.value = "";
       try {
         const payload = JSON.parse(await file.text());
-        if (payload?.format !== "regieplan-tasks" || ![1, 2, 3].includes(payload.version) || !Array.isArray(payload.tasks)) {
+        if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4].includes(payload.version) || !Array.isArray(payload.tasks)) {
           throw new Error("Die Datei hat kein unterstütztes Regieplan-Format.");
         }
         if (payload.tasks.length > 500 || payload.tasks.some((task) => {
           const title = typeof task === "string" ? task : task?.title;
           if (typeof title !== "string" || !title.trim() || title.trim().length > 120) return true;
-          if (payload.version === 2 && typeof task !== "string") {
+          if (payload.version >= 2 && typeof task !== "string") {
             return (task.scheduleEnabled !== undefined && typeof task.scheduleEnabled !== "boolean") ||
-              (task.scheduledTime !== undefined && task.scheduledTime !== "" && !normalizeClockTime(task.scheduledTime));
-          }
-          if (payload.version === 3 && typeof task !== "string") {
-            return (task.scheduleEnabled !== undefined && typeof task.scheduleEnabled !== "boolean") ||
-              (task.scheduledTime !== undefined && task.scheduledTime !== "" && !normalizeClockTime(task.scheduledTime));
+              (task.scheduledTime !== undefined && task.scheduledTime !== "" && !normalizeClockTime(task.scheduledTime)) ||
+              (payload.version === 4 && task.note !== undefined && (typeof task.note !== "string" || task.note.length > 1000)) ||
+              (payload.version === 4 && task.color !== undefined && !taskColors.includes(task.color));
           }
           return false;
         })) {
@@ -952,8 +1095,10 @@
           pending: payload.tasks.map((task) => ({
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             title: (typeof task === "string" ? task : task.title).trim(),
-            scheduleEnabled: payload.version === 2 && typeof task !== "string" && task.scheduleEnabled === true,
+            scheduleEnabled: payload.version >= 2 && typeof task !== "string" && task.scheduleEnabled === true,
             scheduledTime: payload.version >= 2 && typeof task !== "string" ? normalizeClockTime(task.scheduledTime) : "",
+            color: payload.version === 4 && typeof task !== "string" && taskColors.includes(task.color) ? task.color : "default",
+            note: payload.version === 4 && typeof task !== "string" && typeof task.note === "string" ? task.note : "",
             planNumber: null,
             scheduleTriggered: false
           })),
@@ -978,7 +1123,7 @@
       event.preventDefault();
       const title = elements.input.value.trim();
       if (!title) return;
-      state.pending.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, scheduleEnabled: false, scheduledTime: "", scheduleTriggered: false, planNumber: null });
+      state.pending.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, scheduleEnabled: false, scheduledTime: "", scheduleTriggered: false, planNumber: null, color: "default", note: "" });
       elements.input.value = "";
       saveState();
       render();
