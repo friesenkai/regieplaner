@@ -134,6 +134,8 @@
       gap: 48px;
     }
 
+    .workspace.live-mode { grid-template-columns: minmax(0, 1fr); }
+
     .section-heading {
       display: flex;
       align-items: center;
@@ -298,6 +300,8 @@
       padding-top: 2px;
       animation: arrive 500ms 80ms ease-out both;
     }
+
+    .side-panel[hidden] { display: none; }
 
     .add-form {
       padding: 19px;
@@ -529,6 +533,7 @@
     ];
 
     const elements = {
+      workspace: document.querySelector(".workspace"),
       list: document.querySelector("#task-list"),
       historyList: document.querySelector("#history-list"),
       history: document.querySelector("#history"),
@@ -543,6 +548,7 @@
       systemClock: document.querySelector("#system-clock"),
       showName: document.querySelector("#page-title"),
       modeButton: document.querySelector("#mode-button"),
+      sidePanel: document.querySelector(".side-panel"),
       transferActions: document.querySelector(".transfer-actions"),
       storageNote: document.querySelector(".storage-note")
     };
@@ -829,6 +835,8 @@
       elements.exportButton.disabled = state.pending.length + state.completed.length === 0;
       elements.modeButton.textContent = state.mode === "live" ? "Bearbeitungsmodus öffnen" : "Live-Modus starten";
       elements.modeButton.classList.toggle("live", state.mode === "live");
+      elements.workspace.classList.toggle("live-mode", state.mode === "live");
+      elements.sidePanel.hidden = state.mode === "live";
       elements.form.hidden = state.mode === "live";
       elements.transferActions.hidden = state.mode === "live";
       elements.storageNote.hidden = state.mode === "live";
