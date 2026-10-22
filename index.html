@@ -1260,7 +1260,14 @@
         return;
       }
       openedWindow.opener = null;
-      setVmixStatus(task.id, "vMix-Link in neuem Tab geöffnet.");
+      setVmixStatus(task.id, "vMix-Link geöffnet; der Tab wird nach 2 Sekunden geschlossen.");
+      window.setTimeout(() => {
+        try {
+          openedWindow.close();
+        } catch (error) {
+          console.warn(`Der vMix-Tab für „${task.title}“ konnte nicht automatisch geschlossen werden.`, error);
+        }
+      }, 2000);
     }
 
     function updateClock() {
