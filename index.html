@@ -107,7 +107,7 @@
 
     .show-name {
       display: block;
-      width: min(100%, 680px);
+      width: min(150%, calc(750px));
       min-width: 0;
       margin: 0;
       padding: 0 0 4px;
@@ -215,6 +215,23 @@
       color: var(--muted);
       font-family: "SFMono-Regular", Consolas, monospace;
       font-size: 11px;
+    }
+
+    .task-card.editing { grid-template-columns: 48px minmax(0, 1fr) auto auto; }
+    .task-index-button { padding: 0; background: transparent; font: inherit; cursor: pointer; }
+    .task-index-button:hover,
+    .task-index-button:focus-visible { border-color: var(--green); color: var(--green); outline: 2px solid rgba(23, 105, 77, 0.16); }
+    .task-position-input {
+      box-sizing: border-box;
+      width: 48px;
+      height: 34px;
+      padding: 0 3px;
+      border: 1px solid var(--green);
+      border-radius: 4px;
+      color: var(--ink);
+      background: white;
+      font: 12px "SFMono-Regular", Consolas, monospace;
+      text-align: center;
     }
 
     .current .task-index {
@@ -556,6 +573,8 @@
       .task-edit-details { grid-template-columns: minmax(0, 1fr); }
       .task-color-control { max-width: 180px; }
       .task-index { width: 31px; height: 31px; }
+      .task-card.editing { grid-template-columns: 42px minmax(0, 1fr); }
+      .task-position-input { width: 42px; height: 31px; }
       .icon-button { width: 30px; height: 30px; }
       .task-actions { grid-column: 2; justify-content: flex-end; flex-wrap: wrap; }
       .scheduled-time-display { grid-column: 2; min-width: 0; font-size: 18px; text-align: left; }
@@ -727,10 +746,48 @@
         card.title = "Zum Sortieren ziehen";
       }
 
-      const number = document.createElement("div");
-      number.className = "task-index";
+      const canEditPosition = !completed && state.mode === "edit";
+      const number = document.createElement(canEditPosition ? "button" : "div");
+      number.className = `task-index${canEditPosition ? " task-index-button" : ""}`;
       number.textContent = completed ? "✓" : String(state.mode === "live" ? task.planNumber ?? index + 1 : index + 1).padStart(2, "0");
-      number.setAttribute("aria-hidden", "true");
+      if (canEditPosition) {
+        number.type = "button";
+        number.title = "Position im Ablauf ändern";
+        number.setAttribute("aria-label", `Position von „${task.title}“ ändern`);
+        number.addEventListener("click", () => {
+          const positionInput = document.createElement("input");
+          positionInput.className = "task-position-input";
+          positionInput.type = "number";
+          positionInput.min = "1";
+          positionInput.max = String(state.pending.length);
+          positionInput.step = "1";
+          positionInput.required = true;
+          positionInput.value = String(index + 1);
+          positionInput.setAttribute("aria-label", `Neue Position für „${task.title}“ (1 bis ${state.pending.length})`);
+          const commitPosition = () => {
+            const position = Number(positionInput.value);
+            if (!positionInput.validity.valid || !Number.isInteger(position)) {
+              render();
+              return;
+            }
+            moveTaskToPosition(task.id, position);
+          };
+          positionInput.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (positionInput.reportValidity()) commitPosition();
+            } else if (event.key === "Escape") {
+              render();
+            }
+          });
+          positionInput.addEventListener("blur", commitPosition);
+          number.replaceWith(positionInput);
+          positionInput.focus();
+          positionInput.select();
+        });
+      } else {
+        number.setAttribute("aria-hidden", "true");
+      }
 
       const copy = document.createElement("div");
       copy.className = "task-copy";
@@ -1008,6 +1065,20 @@
       const sourceIndex = state.pending.findIndex((task) => task.id === taskId);
       const targetIndex = sourceIndex + offset;
       if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= state.pending.length) return;
+      const [task] = state.pending.splice(sourceIndex, 1);
+      state.pending.splice(targetIndex, 0, task);
+      saveState();
+      render();
+    }
+
+    function moveTaskToPosition(taskId, position) {
+      const sourceIndex = state.pending.findIndex((task) => task.id === taskId);
+      if (sourceIndex < 0 || !Number.isInteger(position) || position < 1 || position > state.pending.length) return;
+      const targetIndex = position - 1;
+      if (sourceIndex === targetIndex) {
+        render();
+        return;
+      }
       const [task] = state.pending.splice(sourceIndex, 1);
       state.pending.splice(targetIndex, 0, task);
       saveState();
