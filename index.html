@@ -946,7 +946,7 @@
         vmixUrlInput.setAttribute("aria-label", `vMix-API-Link für „${task.title}“`);
         const vmixHelp = document.createElement("span");
         vmixHelp.className = "task-color-control";
-        vmixHelp.textContent = "Wird einmal beim Aktivieren im Live-Modus in einem neuen Tab geöffnet.";
+        vmixHelp.textContent = "Wird einmal beim Aktivieren im Live-Modus in diesem Tab geöffnet.";
         vmixCheckbox.addEventListener("change", () => {
           task.vmixEnabled = vmixCheckbox.checked;
           task.vmixTriggered = false;
@@ -1252,22 +1252,19 @@
         return;
       }
       const url = new URL(task.vmixUrl.trim());
-      const openedWindow = window.open(url.href, "_blank");
-      if (!openedWindow) {
-        const message = "Der Browser hat den neuen Tab blockiert. Erlaube Pop-ups für diese Seite.";
-        console.warn(`vMix-Link für „${task.title}“ konnte nicht geöffnet werden: ${message}`);
-        setVmixStatus(task.id, message);
-        return;
-      }
-      openedWindow.opener = null;
-      setVmixStatus(task.id, "vMix-Link geöffnet; der Tab wird nach 2 Sekunden geschlossen.");
-      window.setTimeout(() => {
-        try {
-          openedWindow.close();
-        } catch (error) {
-          console.warn(`Der vMix-Tab für „${task.title}“ konnte nicht automatisch geschlossen werden.`, error);
-        }
-      }, 2000);
+      setVmixStatus(task.id, "vMix-Link wird im Hintergrund abgerufen.");
+      fetch(url.href, {
+        method: "GET",
+        mode: "no-cors",
+        credentials: "omit",
+        cache: "no-store",
+        referrerPolicy: "no-referrer"
+      }).then(() => {
+        setVmixStatus(task.id, "vMix-Link im Hintergrund abgerufen; die Ausführung kann nicht bestätigt werden.");
+      }).catch((error) => {
+        console.warn(`vMix-Aufruf für „${task.title}“ ist fehlgeschlagen.`, error);
+        setVmixStatus(task.id, "vMix-Link konnte nicht abgerufen werden. Netzwerk- oder Browserfreigaben prüfen.");
+      });
     }
 
     function updateClock() {
