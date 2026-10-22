@@ -242,6 +242,24 @@
       background: var(--green-pale);
     }
 
+    .task-index.vmix-enabled {
+      position: relative;
+    }
+
+    .task-index.vmix-enabled::after {
+      position: absolute;
+      inset: -2px;
+      border: 2px solid transparent;
+      border-radius: 50%;
+      background: conic-gradient(var(--green) 0 50%, var(--orange) 50% 100%) border-box;
+      content: "";
+      pointer-events: none;
+      -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      mask-composite: exclude;
+    }
+
     .task-copy { min-width: 0; }
 
     .workspace.live-mode .task-copy {
@@ -778,7 +796,7 @@
 
       const canEditPosition = !completed && state.mode === "edit";
       const number = document.createElement(canEditPosition ? "button" : "div");
-      number.className = `task-index${canEditPosition ? " task-index-button" : ""}`;
+      number.className = `task-index${canEditPosition ? " task-index-button" : ""}${task.vmixEnabled ? " vmix-enabled" : ""}`;
       number.textContent = completed ? "✓" : String(state.mode === "live" ? task.planNumber ?? index + 1 : index + 1).padStart(2, "0");
       if (canEditPosition) {
         number.type = "button";
