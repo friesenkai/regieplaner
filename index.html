@@ -946,7 +946,7 @@
         vmixUrlInput.setAttribute("aria-label", `vMix-API-Link für „${task.title}“`);
         const vmixHelp = document.createElement("span");
         vmixHelp.className = "task-color-control";
-        vmixHelp.textContent = "Wird einmal beim Aktivieren im Live-Modus aufgerufen. Nur lokale vMix-Adressen.";
+        vmixHelp.textContent = "Wird einmal beim Aktivieren im Live-Modus in einem neuen Tab geöffnet.";
         vmixCheckbox.addEventListener("change", () => {
           task.vmixEnabled = vmixCheckbox.checked;
           task.vmixTriggered = false;
@@ -1229,19 +1229,7 @@
       if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) {
         return "Erlaubt sind HTTP-/HTTPS-Links ohne Zugangsdaten oder Fragment.";
       }
-      const host = url.hostname.toLowerCase();
-      const ipv4 = host.split(".");
-      const isPrivateIpv4 = ipv4.length === 4 && ipv4.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) && (
-        Number(ipv4[0]) === 10 ||
-        (Number(ipv4[0]) === 172 && Number(ipv4[1]) >= 16 && Number(ipv4[1]) <= 31) ||
-        (Number(ipv4[0]) === 192 && Number(ipv4[1]) === 168) ||
-        Number(ipv4[0]) === 127
-      );
-      const isPrivateIpv6 = host === "[::1]" || /^\[(?:fc|fd|fe[89ab])/.test(host);
-      const isLocalHostname = host === "localhost" || !host.includes(".") || host.endsWith(".local");
-      return isPrivateIpv4 || isPrivateIpv6 || isLocalHostname
-        ? ""
-        : "Der Link muss auf vMix im lokalen Netzwerk zeigen (private IP-Adresse oder lokaler Hostname).";
+      return "";
     }
 
     function setVmixStatus(taskId, message) {
@@ -1264,24 +1252,15 @@
         return;
       }
       const url = new URL(task.vmixUrl.trim());
-      if (location.protocol === "https:" && url.protocol === "http:") {
-        const message = "Der Browser blockiert den HTTP-Aufruf von dieser HTTPS-Seite aus.";
-        console.warn(`vMix-Befehl für „${task.title}“ wurde nicht aufgerufen: ${message}`);
+      const openedWindow = window.open(url.href, "_blank");
+      if (!openedWindow) {
+        const message = "Der Browser hat den neuen Tab blockiert. Erlaube Pop-ups für diese Seite.";
+        console.warn(`vMix-Link für „${task.title}“ konnte nicht geöffnet werden: ${message}`);
         setVmixStatus(task.id, message);
         return;
       }
-      setVmixStatus(task.id, "vMix-Aufruf gesendet; die Ausführung kann im Browser nicht bestätigt werden.");
-      fetch(url.href, {
-        method: "GET",
-        mode: "no-cors",
-        credentials: "omit",
-        cache: "no-store",
-        redirect: "error",
-        referrerPolicy: "no-referrer"
-      }).catch((error) => {
-        console.warn(`vMix-Aufruf für „${task.title}“ ist fehlgeschlagen.`, error);
-        setVmixStatus(task.id, "vMix-Aufruf fehlgeschlagen; Netzwerk- und Browserfreigaben prüfen.");
-      });
+      openedWindow.opener = null;
+      setVmixStatus(task.id, "vMix-Link in neuem Tab geöffnet.");
     }
 
     function updateClock() {
