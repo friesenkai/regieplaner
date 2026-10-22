@@ -325,6 +325,25 @@
       font-size: 10px;
     }
 
+    .vmix-control { grid-column: 1 / -1; display: grid; gap: 6px; }
+    .vmix-enable { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+    .vmix-checkbox { width: 15px; height: 15px; margin: 0; accent-color: var(--green); }
+    .vmix-url {
+      width: 100%;
+      min-width: 0;
+      min-height: 34px;
+      padding: 6px 8px;
+      border: 1px solid rgba(24, 35, 33, 0.16);
+      border-radius: 4px;
+      color: var(--ink);
+      background: rgba(255, 255, 255, 0.72);
+      font: inherit;
+      font-size: 11px;
+    }
+    .vmix-url:focus { border-color: var(--green); outline: 2px solid rgba(23, 105, 77, 0.12); }
+    .vmix-status { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .vmix-status:empty { display: none; }
+
     .task-color-select {
       min-height: 32px;
       padding: 0 6px;
@@ -605,7 +624,7 @@
         </div>
         <div>
           <div class="brand-name">Regieplan</div>
-          <div class="brand-caption">Livestream Ablauf</div>
+          <div class="brand-caption">Livestream DSC</div>
         </div>
       </div>
     </header>
@@ -730,10 +749,14 @@
       task.planNumber = Number.isInteger(task.planNumber) && task.planNumber > 0 ? task.planNumber : null;
       task.color = taskColors.includes(task.color) ? task.color : "default";
       task.note = typeof task.note === "string" ? task.note.slice(0, 1000) : "";
+      task.vmixEnabled = task.vmixEnabled === true;
+      task.vmixUrl = typeof task.vmixUrl === "string" ? task.vmixUrl.slice(0, 2048) : "";
+      task.vmixTriggered = task.vmixTriggered === true;
     }
     delete state.schedule;
     let draggedTaskId = null;
     let editingScheduledTaskId = null;
+    const vmixRequestStatus = new Map();
 
     function saveState() {
       try {
@@ -747,6 +770,7 @@
       const card = document.createElement("article");
       const isCurrent = index === 0 && !completed && state.mode === "live";
       card.className = `task-card${isCurrent ? " current" : ""}${completed ? " completed" : ""}${!completed && state.mode === "edit" ? " editing" : ""} color-${task.color}`;
+      card.dataset.taskId = task.id;
       if (!completed && state.mode === "edit") {
         card.draggable = true;
         card.title = "Zum Sortieren ziehen";
@@ -813,6 +837,12 @@
       scheduledTime.textContent = task.scheduleEnabled && isValidClockTime(task.scheduledTime)
         ? formatClockTime(task.scheduledTime)
         : "";
+      if (isCurrent && task.vmixEnabled) {
+        const vmixStatus = document.createElement("div");
+        vmixStatus.className = "vmix-status";
+        vmixStatus.textContent = vmixRequestStatus.get(task.id) || "";
+        copy.append(vmixStatus);
+      }
 
       const actions = document.createElement("div");
       actions.className = "task-actions";
@@ -891,6 +921,46 @@
         });
         colorLabel.append(colorSelect);
         editDetails.append(noteInput, colorLabel);
+
+        const vmixControl = document.createElement("div");
+        vmixControl.className = "vmix-control";
+        const vmixLabel = document.createElement("label");
+        vmixLabel.className = "vmix-enable";
+        const vmixCheckbox = document.createElement("input");
+        vmixCheckbox.className = "vmix-checkbox";
+        vmixCheckbox.type = "checkbox";
+        vmixCheckbox.checked = task.vmixEnabled;
+        vmixCheckbox.setAttribute("aria-label", `vMix-Befehl für „${task.title}“ aktivieren`);
+        const vmixLabelText = document.createElement("span");
+        vmixLabelText.textContent = "vMix-Befehl beim Aktivieren ausführen";
+        vmixLabel.append(vmixCheckbox, vmixLabelText);
+        const vmixUrlInput = document.createElement("input");
+        vmixUrlInput.className = "vmix-url";
+        vmixUrlInput.type = "url";
+        vmixUrlInput.maxLength = 2048;
+        vmixUrlInput.placeholder = "http://192.168.1.20:8088/api/?Function=...";
+        vmixUrlInput.value = task.vmixUrl;
+        vmixUrlInput.hidden = !task.vmixEnabled;
+        vmixUrlInput.autocomplete = "off";
+        vmixUrlInput.spellcheck = false;
+        vmixUrlInput.setAttribute("aria-label", `vMix-API-Link für „${task.title}“`);
+        const vmixHelp = document.createElement("span");
+        vmixHelp.className = "task-color-control";
+        vmixHelp.textContent = "Wird einmal beim Aktivieren im Live-Modus aufgerufen. Nur lokale vMix-Adressen.";
+        vmixCheckbox.addEventListener("change", () => {
+          task.vmixEnabled = vmixCheckbox.checked;
+          task.vmixTriggered = false;
+          vmixUrlInput.hidden = !task.vmixEnabled;
+          saveState();
+          if (task.vmixEnabled) vmixUrlInput.focus();
+        });
+        vmixUrlInput.addEventListener("input", () => {
+          task.vmixUrl = vmixUrlInput.value.trim();
+          task.vmixTriggered = false;
+          saveState();
+        });
+        vmixControl.append(vmixLabel, vmixUrlInput, vmixHelp);
+        editDetails.append(vmixControl);
         copy.append(editDetails);
 
         const scheduleLabel = document.createElement("label");
@@ -986,6 +1056,7 @@
         restore.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-2"/></svg>';
         restore.addEventListener("click", () => {
           const [restored] = state.completed.splice(index, 1);
+          restored.vmixTriggered = false;
           state.pending.unshift(restored);
           saveState();
           render();
@@ -1098,6 +1169,7 @@
       state.completed.unshift(task);
       saveState();
       render();
+      activateCurrentTask();
     }
 
     function render() {
@@ -1145,6 +1217,73 @@
       return isValidClockTime(value) ? value : "";
     }
 
+    function vmixUrlError(value) {
+      if (typeof value !== "string" || !value.trim()) return "Hinterlege einen vMix-API-Link.";
+      if (value.length > 2048) return "Der vMix-Link ist zu lang.";
+      let url;
+      try {
+        url = new URL(value.trim());
+      } catch {
+        return "Der vMix-Link ist ungültig.";
+      }
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.hash) {
+        return "Erlaubt sind HTTP-/HTTPS-Links ohne Zugangsdaten oder Fragment.";
+      }
+      const host = url.hostname.toLowerCase();
+      const ipv4 = host.split(".");
+      const isPrivateIpv4 = ipv4.length === 4 && ipv4.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) && (
+        Number(ipv4[0]) === 10 ||
+        (Number(ipv4[0]) === 172 && Number(ipv4[1]) >= 16 && Number(ipv4[1]) <= 31) ||
+        (Number(ipv4[0]) === 192 && Number(ipv4[1]) === 168) ||
+        Number(ipv4[0]) === 127
+      );
+      const isPrivateIpv6 = host === "[::1]" || /^\[(?:fc|fd|fe[89ab])/.test(host);
+      const isLocalHostname = host === "localhost" || !host.includes(".") || host.endsWith(".local");
+      return isPrivateIpv4 || isPrivateIpv6 || isLocalHostname
+        ? ""
+        : "Der Link muss auf vMix im lokalen Netzwerk zeigen (private IP-Adresse oder lokaler Hostname).";
+    }
+
+    function setVmixStatus(taskId, message) {
+      vmixRequestStatus.set(taskId, message);
+      const card = Array.from(elements.list.querySelectorAll(".task-card")).find((item) => item.dataset.taskId === taskId);
+      const status = card?.querySelector(".vmix-status");
+      if (status) status.textContent = message;
+    }
+
+    function activateCurrentTask() {
+      if (state.mode !== "live") return;
+      const task = state.pending[0];
+      if (!task || !task.vmixEnabled || task.vmixTriggered) return;
+      task.vmixTriggered = true;
+      saveState();
+      const error = vmixUrlError(task.vmixUrl);
+      if (error) {
+        console.warn(`vMix-Befehl für „${task.title}“ wurde nicht aufgerufen: ${error}`);
+        setVmixStatus(task.id, error);
+        return;
+      }
+      const url = new URL(task.vmixUrl.trim());
+      if (location.protocol === "https:" && url.protocol === "http:") {
+        const message = "Der Browser blockiert den HTTP-Aufruf von dieser HTTPS-Seite aus.";
+        console.warn(`vMix-Befehl für „${task.title}“ wurde nicht aufgerufen: ${message}`);
+        setVmixStatus(task.id, message);
+        return;
+      }
+      setVmixStatus(task.id, "vMix-Aufruf gesendet; die Ausführung kann im Browser nicht bestätigt werden.");
+      fetch(url.href, {
+        method: "GET",
+        mode: "no-cors",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "error",
+        referrerPolicy: "no-referrer"
+      }).catch((error) => {
+        console.warn(`vMix-Aufruf für „${task.title}“ ist fehlgeschlagen.`, error);
+        setVmixStatus(task.id, "vMix-Aufruf fehlgeschlagen; Netzwerk- und Browserfreigaben prüfen.");
+      });
+    }
+
     function updateClock() {
       const now = new Date();
       elements.systemClock.textContent = new Intl.DateTimeFormat("de-DE", {
@@ -1185,6 +1324,7 @@
         saveState();
         render();
       }
+      activateCurrentTask();
     }
 
     function exportTasks() {
@@ -1193,11 +1333,13 @@
         scheduleEnabled: task.scheduleEnabled === true,
         scheduledTime: task.scheduledTime || "",
         color: taskColors.includes(task.color) ? task.color : "default",
-        note: typeof task.note === "string" ? task.note : ""
+        note: typeof task.note === "string" ? task.note : "",
+        vmixEnabled: task.vmixEnabled === true,
+        vmixUrl: typeof task.vmixUrl === "string" ? task.vmixUrl : ""
       }));
       const payload = {
         format: "regieplan-tasks",
-        version: 4,
+        version: 5,
         exportedAt: new Date().toISOString(),
         showName: state.showName,
         tasks
@@ -1225,7 +1367,7 @@
       elements.importFile.value = "";
       try {
         const payload = JSON.parse(await file.text());
-        if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4].includes(payload.version) || !Array.isArray(payload.tasks)) {
+        if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5].includes(payload.version) || !Array.isArray(payload.tasks)) {
           throw new Error("Die Datei hat kein unterstütztes Regieplan-Format.");
         }
         if (payload.tasks.length > 500 || payload.tasks.some((task) => {
@@ -1234,14 +1376,20 @@
           if (payload.version >= 2 && typeof task !== "string") {
             return (task.scheduleEnabled !== undefined && typeof task.scheduleEnabled !== "boolean") ||
               (task.scheduledTime !== undefined && task.scheduledTime !== "" && !normalizeClockTime(task.scheduledTime)) ||
-              (payload.version === 4 && task.note !== undefined && (typeof task.note !== "string" || task.note.length > 1000)) ||
-              (payload.version === 4 && task.color !== undefined && !taskColors.includes(task.color));
+              (payload.version >= 4 && task.note !== undefined && (typeof task.note !== "string" || task.note.length > 1000)) ||
+              (payload.version >= 4 && task.color !== undefined && !taskColors.includes(task.color)) ||
+              (payload.version >= 5 && task.vmixEnabled !== undefined && typeof task.vmixEnabled !== "boolean") ||
+              (payload.version >= 5 && task.vmixUrl !== undefined && (typeof task.vmixUrl !== "string" || task.vmixUrl.length > 2048));
           }
           return false;
         })) {
           throw new Error("Die Datei enthält ungültige Aufgaben.");
         }
-        if (!window.confirm("Der Import ersetzt die aktuelle Aufgabenliste und deren Erledigt-Historie. Fortfahren?")) return;
+        const includesVmixCommands = payload.version >= 5 && payload.tasks.some((task) => typeof task !== "string" && task.vmixEnabled === true && task.vmixUrl);
+        const importMessage = includesVmixCommands
+          ? "Der Import ersetzt die aktuelle Aufgabenliste und deren Erledigt-Historie. Enthaltene vMix-Befehle werden beim Aktivieren der jeweiligen Karte im Live-Modus aufgerufen. Fortfahren?"
+          : "Der Import ersetzt die aktuelle Aufgabenliste und deren Erledigt-Historie. Fortfahren?";
+        if (!window.confirm(importMessage)) return;
 
         state = {
           pending: payload.tasks.map((task) => ({
@@ -1249,8 +1397,11 @@
             title: (typeof task === "string" ? task : task.title).trim(),
             scheduleEnabled: payload.version >= 2 && typeof task !== "string" && task.scheduleEnabled === true,
             scheduledTime: payload.version >= 2 && typeof task !== "string" ? normalizeClockTime(task.scheduledTime) : "",
-            color: payload.version === 4 && typeof task !== "string" && taskColors.includes(task.color) ? task.color : "default",
-            note: payload.version === 4 && typeof task !== "string" && typeof task.note === "string" ? task.note : "",
+            color: payload.version >= 4 && typeof task !== "string" && taskColors.includes(task.color) ? task.color : "default",
+            note: payload.version >= 4 && typeof task !== "string" && typeof task.note === "string" ? task.note : "",
+            vmixEnabled: payload.version >= 5 && typeof task !== "string" && task.vmixEnabled === true,
+            vmixUrl: payload.version >= 5 && typeof task !== "string" && typeof task.vmixUrl === "string" ? task.vmixUrl : "",
+            vmixTriggered: false,
             planNumber: null,
             scheduleTriggered: false
           })),
@@ -1258,6 +1409,7 @@
           mode: "edit",
           showName: typeof payload.showName === "string" ? payload.showName.trim().slice(0, 100) : ""
         };
+        vmixRequestStatus.clear();
         elements.showName.value = state.showName;
         saveState();
         render();
@@ -1275,7 +1427,7 @@
       event.preventDefault();
       const title = elements.input.value.trim();
       if (!title) return;
-      state.pending.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, scheduleEnabled: false, scheduledTime: "", scheduleTriggered: false, planNumber: null, color: "default", note: "" });
+      state.pending.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title, scheduleEnabled: false, scheduledTime: "", scheduleTriggered: false, planNumber: null, color: "default", note: "", vmixEnabled: false, vmixUrl: "", vmixTriggered: false });
       elements.input.value = "";
       saveState();
       render();
@@ -1297,7 +1449,12 @@
       } else {
         state.mode = "edit";
         state.pending.forEach((task) => { task.planNumber = null; });
-        state.completed.forEach((task) => { task.planNumber = null; });
+        state.pending.forEach((task) => { task.vmixTriggered = false; });
+        state.completed.forEach((task) => {
+          task.planNumber = null;
+          task.vmixTriggered = false;
+        });
+        vmixRequestStatus.clear();
       }
       saveState();
       render();
