@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#f3f4ef">
-  <title>Regieplan · Livestream</title>
+  <title>Regieplan · Livestream DSC</title>
   <style>
     :root {
       color-scheme: light;
@@ -79,6 +79,8 @@
       animation: arrive 420ms ease-out both;
     }
 
+    .intro-copy { min-width: 0; }
+
     @keyframes arrive {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
@@ -136,21 +138,6 @@
 
     .workspace.live-mode { grid-template-columns: minmax(0, 1fr); }
     .side-panel[hidden] { display: none; }
-
-    .section-heading {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 13px;
-    }
-
-    h2 {
-      margin: 0;
-      font-family: Georgia, "Times New Roman", serif;
-      font-size: 21px;
-      font-weight: 500;
-    }
 
     .task-count {
       color: var(--muted);
@@ -395,8 +382,8 @@
       justify-content: flex-start;
     }
     .task-schedule-controls { display: grid; justify-items: start; gap: 6px; }
-    .workspace.live-mode .task-actions { grid-column: 3; }
-    .workspace.live-mode .scheduled-time-display { grid-column: 4; }
+    .workspace.live-mode .task-actions { grid-column: 4; }
+    .workspace.live-mode .scheduled-time-display { grid-column: 3; }
 
     .icon-button {
       display: grid;
@@ -558,7 +545,8 @@
       main { padding-top: 34px; }
       .workspace { grid-template-columns: 1fr; gap: 32px; }
       .side-panel { grid-row: 1; }
-      .intro { align-items: start; margin-bottom: 24px; }
+      .intro { flex-direction: column; align-items: stretch; margin-bottom: 24px; }
+      .intro .section-meta { align-self: flex-end; }
       .add-form { padding: 16px; }
       .form-label { margin-bottom: 10px; }
       .storage-note { display: none; }
@@ -571,8 +559,9 @@
       .icon-button { width: 30px; height: 30px; }
       .task-actions { grid-column: 2; justify-content: flex-end; flex-wrap: wrap; }
       .scheduled-time-display { grid-column: 2; min-width: 0; font-size: 18px; text-align: left; }
-      .workspace.live-mode .task-actions { grid-column: 2; grid-row: 2; }
-      .workspace.live-mode .scheduled-time-display { grid-column: 2; grid-row: 3; }
+      .workspace.live-mode .task-card { grid-template-columns: 34px minmax(0, 1fr) auto; }
+      .workspace.live-mode .task-actions { grid-column: 3; grid-row: 2; }
+      .workspace.live-mode .scheduled-time-display { grid-column: 2; grid-row: 2; }
       .workspace.live-mode .task-copy { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
       .section-meta { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
     }
@@ -598,22 +587,19 @@
 
     <main>
       <section class="intro" aria-labelledby="page-title">
-        <div>
-          <p class="eyebrow">Live-Regie / Ablauf</p>
-          <input class="show-name" id="page-title" type="text" maxlength="100" placeholder="Name der Sendung" aria-label="Name der Sendung" autocomplete="off">
+        <div class="intro-copy">
+          <p class="eyebrow">Live-Regie / Rundown</p>
+          <input class="show-name" id="page-title" type="text" maxlength="50" placeholder="Name der Sendung" aria-label="Name der Sendung" autocomplete="off">
+        </div>
+        <div class="section-meta">
+          <time class="system-clock" id="system-clock" aria-label="Aktuelle Systemzeit"></time>
+          <span class="task-count" id="task-count">0 offen</span>
+          <button class="mode-button" id="mode-button" type="button">Live-Modus starten</button>
         </div>
       </section>
 
       <div class="workspace">
-        <section class="queue-section" aria-labelledby="queue-heading">
-          <div class="section-heading">
-            <h2 id="queue-heading">Programmliste</h2>
-            <div class="section-meta">
-              <time class="system-clock" id="system-clock" aria-label="Aktuelle Systemzeit"></time>
-              <span class="task-count" id="task-count">0 offen</span>
-              <button class="mode-button" id="mode-button" type="button">Live-Modus starten</button>
-            </div>
-          </div>
+        <section class="queue-section" aria-label="Ablauf">
           <div class="task-list" id="task-list" aria-live="polite"></div>
 
           <details class="history" id="history">
