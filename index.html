@@ -1260,7 +1260,7 @@
         cache: "no-store",
         referrerPolicy: "no-referrer"
       }).then(() => {
-        setVmixStatus(task.id, "vMix-Link im Hintergrund abgerufen; die Ausführung kann nicht bestätigt werden.");
+        setVmixStatus(task.id, "vMix-Link wurde im Hintergrund abgerufen.");
       }).catch((error) => {
         console.warn(`vMix-Aufruf für „${task.title}“ ist fehlgeschlagen.`, error);
         setVmixStatus(task.id, "vMix-Link konnte nicht abgerufen werden. Netzwerk- oder Browserfreigaben prüfen.");
