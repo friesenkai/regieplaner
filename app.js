@@ -1,4 +1,5 @@
 const STORAGE_KEY = "regieplan-livestream-v1";
+const MAX_AD_DURATION_SECONDS = 59999;
 const taskColors = ["default", "blue", "green", "yellow", "orange", "pink", "violet"];
 const taskColorLabels = {
   default: "Weiß",
@@ -31,6 +32,8 @@ const elements = {
   importFile: document.querySelector("#import-file"),
   transferStatus: document.querySelector("#transfer-status"),
   systemClock: document.querySelector("#system-clock"),
+  adTimerDuration: document.querySelector("#ad-timer-duration"),
+  adTimerDisplay: document.querySelector("#ad-timer-display"),
   showName: document.querySelector("#page-title"),
   modeButton: document.querySelector("#mode-button"),
   sidePanel: document.querySelector(".side-panel"),
@@ -51,6 +54,12 @@ function loadState() {
 let state = loadState();
 state.showName = typeof state.showName === "string" ? state.showName : "";
 state.mode = state.mode === "live" ? "live" : "edit";
+state.adDurationSeconds = Number.isInteger(state.adDurationSeconds) && state.adDurationSeconds >= 0 && state.adDurationSeconds <= MAX_AD_DURATION_SECONDS
+  ? state.adDurationSeconds
+  : 0;
+state.adTimerTaskId = typeof state.adTimerTaskId === "string" ? state.adTimerTaskId : null;
+state.adTimerEndsAt = Number.isFinite(state.adTimerEndsAt) && state.adTimerEndsAt > 0 ? state.adTimerEndsAt : null;
+elements.adTimerDuration.value = formatAdDuration(state.adDurationSeconds);
 elements.showName.value = state.showName;
 for (const task of [...state.pending, ...state.completed]) {
   task.scheduleEnabled = task.scheduleEnabled === true;
@@ -477,9 +486,14 @@ function completeTask(taskId) {
   if (taskIndex < 0) return;
   const [task] = state.pending.splice(taskIndex, 1);
   state.completed.unshift(task);
+  if (state.adTimerTaskId === taskId) {
+    state.adTimerTaskId = null;
+    state.adTimerEndsAt = null;
+  }
   saveState();
   render();
   activateCurrentTask();
+  processAdvertisingTimer();
 }
 
 function render() {
@@ -510,7 +524,63 @@ function render() {
   elements.transferActions.hidden = state.mode === "live";
   elements.storageNote.hidden = state.mode === "live";
   elements.showName.disabled = state.mode === "live";
+  elements.adTimerDuration.hidden = state.mode === "live";
+  elements.adTimerDisplay.hidden = state.mode !== "live";
+  updateAdTimerDisplay();
   updateClock();
+}
+
+function parseAdDuration(value) {
+  if (typeof value !== "string") return null;
+  const match = /^(\d{1,3}):([0-5]\d)$/.exec(value.trim());
+  if (!match) return null;
+  const seconds = Number(match[1]) * 60 + Number(match[2]);
+  return seconds <= MAX_AD_DURATION_SECONDS ? seconds : null;
+}
+
+function formatAdDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+}
+
+function isAdvertisingTask(task) {
+  return typeof task?.title === "string" && /werbung/i.test(task.title);
+}
+
+function updateAdTimerDisplay() {
+  if (!elements.adTimerDisplay) return;
+  const currentTask = state.pending[0];
+  const isRunning = state.mode === "live" &&
+    isAdvertisingTask(currentTask) &&
+    state.adTimerTaskId === currentTask.id &&
+    Number.isFinite(state.adTimerEndsAt);
+  const remainingSeconds = isRunning
+    ? Math.max(0, Math.ceil((state.adTimerEndsAt - Date.now()) / 1000))
+    : state.adDurationSeconds;
+  elements.adTimerDisplay.textContent = formatAdDuration(remainingSeconds);
+}
+
+function processAdvertisingTimer() {
+  const currentTask = state.pending[0];
+  if (state.mode !== "live" || !isAdvertisingTask(currentTask) || state.adDurationSeconds === 0) {
+    if (state.adTimerTaskId !== null || state.adTimerEndsAt !== null) {
+      state.adTimerTaskId = null;
+      state.adTimerEndsAt = null;
+      saveState();
+    }
+    updateAdTimerDisplay();
+    return;
+  }
+
+  if (state.adTimerTaskId !== currentTask.id || !Number.isFinite(state.adTimerEndsAt)) {
+    state.adTimerTaskId = currentTask.id;
+    state.adTimerEndsAt = Date.now() + state.adDurationSeconds * 1000;
+    saveState();
+  }
+
+  updateAdTimerDisplay();
+  if (state.adTimerEndsAt <= Date.now()) completeTask(currentTask.id);
 }
 
 function isValidClockTime(value) {
@@ -587,7 +657,10 @@ function updateClock() {
 function processScheduledTasks() {
   const now = new Date();
   updateClock();
-  if (state.mode !== "live") return;
+  if (state.mode !== "live") {
+    processAdvertisingTimer();
+    return;
+  }
   const currentSecond = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
   const dueTasks = state.pending
     .map((task, index) => ({ task, index }))
@@ -618,6 +691,7 @@ function processScheduledTasks() {
     render();
   }
   activateCurrentTask();
+  processAdvertisingTimer();
 }
 
 function exportTasks() {
@@ -632,9 +706,10 @@ function exportTasks() {
   }));
   const payload = {
     format: "regieplan-tasks",
-    version: 5,
+    version: 6,
     exportedAt: new Date().toISOString(),
     showName: state.showName,
+    adDurationSeconds: state.adDurationSeconds,
     tasks
   };
   const file = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -660,8 +735,11 @@ async function importTasks(file) {
   elements.importFile.value = "";
   try {
     const payload = JSON.parse(await file.text());
-    if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5].includes(payload.version) || !Array.isArray(payload.tasks)) {
+    if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5, 6].includes(payload.version) || !Array.isArray(payload.tasks)) {
       throw new Error("Die Datei hat kein unterstütztes Regieplan-Format.");
+    }
+    if (payload.version >= 6 && (!Number.isInteger(payload.adDurationSeconds) || payload.adDurationSeconds < 0 || payload.adDurationSeconds > MAX_AD_DURATION_SECONDS)) {
+      throw new Error("Die Datei enthält eine ungültige Timer-Dauer.");
     }
     if (payload.tasks.length > 500 || payload.tasks.some((task) => {
       const title = typeof task === "string" ? task : task?.title;
@@ -700,10 +778,14 @@ async function importTasks(file) {
       })),
       completed: [],
       mode: "edit",
+      adDurationSeconds: payload.version >= 6 ? payload.adDurationSeconds : state.adDurationSeconds,
+      adTimerTaskId: null,
+      adTimerEndsAt: null,
       showName: typeof payload.showName === "string" ? payload.showName.trim().slice(0, 100) : ""
     };
     vmixRequestStatus.clear();
     elements.showName.value = state.showName;
+    elements.adTimerDuration.value = formatAdDuration(state.adDurationSeconds);
     saveState();
     render();
     elements.transferStatus.classList.remove("error");
@@ -730,6 +812,28 @@ elements.form.addEventListener("submit", (event) => {
 elements.showName.addEventListener("input", () => {
   state.showName = elements.showName.value.trim();
   saveState();
+});
+
+elements.adTimerDuration.addEventListener("input", () => {
+  const duration = parseAdDuration(elements.adTimerDuration.value);
+  elements.adTimerDuration.setCustomValidity(duration === null
+    ? "Bitte eine Dauer als Minuten:Sekunden eingeben, z. B. 02:30."
+    : "");
+  if (duration === null) return;
+  state.adDurationSeconds = duration;
+  saveState();
+  updateAdTimerDisplay();
+});
+
+elements.adTimerDuration.addEventListener("blur", () => {
+  const duration = parseAdDuration(elements.adTimerDuration.value);
+  if (duration === null) {
+    elements.adTimerDuration.reportValidity();
+    elements.adTimerDuration.value = formatAdDuration(state.adDurationSeconds);
+    elements.adTimerDuration.setCustomValidity("");
+    return;
+  }
+  elements.adTimerDuration.value = formatAdDuration(duration);
 });
 
 elements.modeButton.addEventListener("click", () => {
