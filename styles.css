@@ -397,6 +397,23 @@ h1 {
   font-size: 11px;
 }
 
+.ad-task-duration {
+  width: 82px;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 1px solid rgba(24, 35, 33, 0.16);
+  border-radius: 4px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.8);
+  font: 12px "SFMono-Regular", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ad-task-duration:focus { border-color: var(--green); outline: 2px solid rgba(23, 105, 77, 0.12); }
+.ad-task-duration-control[hidden] { display: none; }
+.ad-task-duration-control:not([hidden]) { grid-column: 1 / -1; }
+
 .scheduled-time-display {
   min-width: 112px;
   color: var(--green);

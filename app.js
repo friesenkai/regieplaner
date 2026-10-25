@@ -71,6 +71,9 @@ for (const task of [...state.pending, ...state.completed]) {
   task.vmixEnabled = task.vmixEnabled === true;
   task.vmixUrl = typeof task.vmixUrl === "string" ? task.vmixUrl.slice(0, 2048) : "";
   task.vmixTriggered = task.vmixTriggered === true;
+  task.adDurationSeconds = Number.isInteger(task.adDurationSeconds) && task.adDurationSeconds >= 0 && task.adDurationSeconds <= MAX_AD_DURATION_SECONDS
+    ? task.adDurationSeconds
+    : null;
 }
 delete state.schedule;
 let draggedTaskId = null;
@@ -178,6 +181,7 @@ function makeTaskCard(task, index, completed = false) {
       if (!newTitle) return;
       task.title = newTitle;
       title.textContent = newTitle;
+      adDurationControl.hidden = !isAdvertisingTask(task);
       saveState();
     });
     titleInput.addEventListener("blur", () => {
@@ -206,6 +210,45 @@ function makeTaskCard(task, index, completed = false) {
 
     const editDetails = document.createElement("div");
     editDetails.className = "task-edit-details";
+    const adDurationControl = document.createElement("label");
+    adDurationControl.className = "task-color-control ad-task-duration-control";
+    adDurationControl.hidden = !isAdvertisingTask(task);
+    adDurationControl.append(document.createTextNode("Werbedauer (MM:SS)"));
+    const adDurationInput = document.createElement("input");
+    adDurationInput.className = "ad-task-duration";
+    adDurationInput.type = "text";
+    adDurationInput.inputMode = "numeric";
+    adDurationInput.maxLength = 6;
+    adDurationInput.placeholder = "Standard";
+    adDurationInput.autocomplete = "off";
+    adDurationInput.value = task.adDurationSeconds === null ? "" : formatAdDuration(task.adDurationSeconds);
+    adDurationInput.setAttribute("aria-label", `Werbedauer für „${task.title}“ in Minuten und Sekunden (leer = Standarddauer)`);
+    adDurationInput.addEventListener("input", () => {
+      const value = adDurationInput.value.trim();
+      const duration = value === "" ? null : parseAdDuration(value);
+      adDurationInput.setCustomValidity(value !== "" && duration === null
+        ? "Bitte eine Dauer als Minuten:Sekunden eingeben, z. B. 02:30."
+        : "");
+      if (value !== "" && duration === null) return;
+      task.adDurationSeconds = duration;
+      saveState();
+      if (state.adTimerTaskId === task.id) {
+        state.adTimerEndsAt = Date.now() + getAdDurationSeconds(task) * 1000;
+        saveState();
+      }
+    });
+    adDurationInput.addEventListener("blur", () => {
+      const value = adDurationInput.value.trim();
+      const duration = value === "" ? null : parseAdDuration(value);
+      if (value !== "" && duration === null) {
+        adDurationInput.reportValidity();
+        adDurationInput.value = task.adDurationSeconds === null ? "" : formatAdDuration(task.adDurationSeconds);
+        adDurationInput.setCustomValidity("");
+        return;
+      }
+      adDurationInput.value = duration === null ? "" : formatAdDuration(duration);
+    });
+    adDurationControl.append(adDurationInput);
     const noteInput = document.createElement("textarea");
     noteInput.className = "task-note-input";
     noteInput.maxLength = 1000;
@@ -239,7 +282,7 @@ function makeTaskCard(task, index, completed = false) {
       saveState();
     });
     colorLabel.append(colorSelect);
-    editDetails.append(noteInput, colorLabel);
+    editDetails.append(adDurationControl, noteInput, colorLabel);
 
     const vmixControl = document.createElement("div");
     vmixControl.className = "vmix-control";
@@ -544,6 +587,10 @@ function formatAdDuration(seconds) {
   return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
+function getAdDurationSeconds(task) {
+  return task?.adDurationSeconds ?? state.adDurationSeconds;
+}
+
 function isAdvertisingTask(task) {
   return typeof task?.title === "string" && /werbung/i.test(task.title);
 }
@@ -557,13 +604,15 @@ function updateAdTimerDisplay() {
     Number.isFinite(state.adTimerEndsAt);
   const remainingSeconds = isRunning
     ? Math.max(0, Math.ceil((state.adTimerEndsAt - Date.now()) / 1000))
-    : state.adDurationSeconds;
+    : (state.mode === "live" && isAdvertisingTask(currentTask)
+      ? getAdDurationSeconds(currentTask)
+      : state.adDurationSeconds);
   elements.adTimerDisplay.textContent = formatAdDuration(remainingSeconds);
 }
 
 function processAdvertisingTimer() {
   const currentTask = state.pending[0];
-  if (state.mode !== "live" || !isAdvertisingTask(currentTask) || state.adDurationSeconds === 0) {
+  if (state.mode !== "live" || !isAdvertisingTask(currentTask) || getAdDurationSeconds(currentTask) === 0) {
     if (state.adTimerTaskId !== null || state.adTimerEndsAt !== null) {
       state.adTimerTaskId = null;
       state.adTimerEndsAt = null;
@@ -575,7 +624,7 @@ function processAdvertisingTimer() {
 
   if (state.adTimerTaskId !== currentTask.id || !Number.isFinite(state.adTimerEndsAt)) {
     state.adTimerTaskId = currentTask.id;
-    state.adTimerEndsAt = Date.now() + state.adDurationSeconds * 1000;
+    state.adTimerEndsAt = Date.now() + getAdDurationSeconds(currentTask) * 1000;
     saveState();
   }
 
@@ -699,6 +748,7 @@ function exportTasks() {
     title: task.title,
     scheduleEnabled: task.scheduleEnabled === true,
     scheduledTime: task.scheduledTime || "",
+    adDurationSeconds: task.adDurationSeconds,
     color: taskColors.includes(task.color) ? task.color : "default",
     note: typeof task.note === "string" ? task.note : "",
     vmixEnabled: task.vmixEnabled === true,
@@ -706,7 +756,7 @@ function exportTasks() {
   }));
   const payload = {
     format: "regieplan-tasks",
-    version: 6,
+    version: 7,
     exportedAt: new Date().toISOString(),
     showName: state.showName,
     adDurationSeconds: state.adDurationSeconds,
@@ -735,11 +785,17 @@ async function importTasks(file) {
   elements.importFile.value = "";
   try {
     const payload = JSON.parse(await file.text());
-    if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5, 6].includes(payload.version) || !Array.isArray(payload.tasks)) {
+    if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5, 6, 7].includes(payload.version) || !Array.isArray(payload.tasks)) {
       throw new Error("Die Datei hat kein unterstütztes Regieplan-Format.");
     }
     if (payload.version >= 6 && (!Number.isInteger(payload.adDurationSeconds) || payload.adDurationSeconds < 0 || payload.adDurationSeconds > MAX_AD_DURATION_SECONDS)) {
       throw new Error("Die Datei enthält eine ungültige Timer-Dauer.");
+    }
+    if (payload.version >= 7 && payload.tasks.some((task) => typeof task !== "string" &&
+      task?.adDurationSeconds !== undefined &&
+      task.adDurationSeconds !== null &&
+      (!Number.isInteger(task.adDurationSeconds) || task.adDurationSeconds < 0 || task.adDurationSeconds > MAX_AD_DURATION_SECONDS))) {
+      throw new Error("Die Datei enthält eine ungültige Werbedauer für eine Aufgabe.");
     }
     if (payload.tasks.length > 500 || payload.tasks.some((task) => {
       const title = typeof task === "string" ? task : task?.title;
@@ -768,6 +824,9 @@ async function importTasks(file) {
         title: (typeof task === "string" ? task : task.title).trim(),
         scheduleEnabled: payload.version >= 2 && typeof task !== "string" && task.scheduleEnabled === true,
         scheduledTime: payload.version >= 2 && typeof task !== "string" ? normalizeClockTime(task.scheduledTime) : "",
+        adDurationSeconds: payload.version >= 7 && typeof task !== "string" && Number.isInteger(task.adDurationSeconds)
+          ? task.adDurationSeconds
+          : null,
         color: payload.version >= 4 && typeof task !== "string" && taskColors.includes(task.color) ? task.color : "default",
         note: payload.version >= 4 && typeof task !== "string" && typeof task.note === "string" ? task.note : "",
         vmixEnabled: payload.version >= 5 && typeof task !== "string" && task.vmixEnabled === true,

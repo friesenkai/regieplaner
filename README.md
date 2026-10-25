@@ -5,7 +5,7 @@ Visualisierung eines Regieablaufes.
 
 Im Bearbeitungsmodus können neue Ablaufpunkte hinzugefügt werden, die im Live-Modus manuell der zeitgesteuert voranschreiten.
 
-Der Werbetimer oben rechts lässt sich im Bearbeitungsmodus als Minuten:Sekunden-Dauer einstellen. Im Live-Modus startet er bei einer aktiven Karte mit „Werbung“ im Titel und markiert diese nach Ablauf automatisch als erledigt.
+Der Werbetimer oben rechts lässt sich im Bearbeitungsmodus als Minuten:Sekunden-Standarddauer einstellen. Für einzelne Karten mit „Werbung“ im Titel kann zusätzlich eine eigene Dauer festgelegt werden; bleibt das Feld leer, gilt die Standarddauer. Im Live-Modus startet der Timer für die aktive Karte mit "Werbung" im Namen und markiert sie nach Ablauf automatisch als erledigt.
 
 vmix_fn01: über einen im Hintergrund aberufenen Link können vMix-Funktionen gestartet werden
 
