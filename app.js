@@ -30,6 +30,8 @@ const elements = {
   exportButton: document.querySelector("#export-button"),
   importButton: document.querySelector("#import-button"),
   importFile: document.querySelector("#import-file"),
+  gistImportForm: document.querySelector("#gist-import-form"),
+  gistUrl: document.querySelector("#gist-url"),
   transferStatus: document.querySelector("#transfer-status"),
   systemClock: document.querySelector("#system-clock"),
   adTimerDuration: document.querySelector("#ad-timer-duration"),
@@ -784,7 +786,15 @@ async function importTasks(file) {
   if (!file) return;
   elements.importFile.value = "";
   try {
-    const payload = JSON.parse(await file.text());
+    importTasksContent(await file.text());
+  } catch (error) {
+    showImportError(error);
+  }
+}
+
+function importTasksContent(content) {
+  try {
+    const payload = JSON.parse(content);
     if (payload?.format !== "regieplan-tasks" || ![1, 2, 3, 4, 5, 6, 7].includes(payload.version) || !Array.isArray(payload.tasks)) {
       throw new Error("Die Datei hat kein unterstütztes Regieplan-Format.");
     }
@@ -850,10 +860,91 @@ async function importTasks(file) {
     elements.transferStatus.classList.remove("error");
     elements.transferStatus.textContent = `${state.pending.length} Aufgaben importiert.`;
   } catch (error) {
-    elements.transferStatus.classList.add("error");
-    elements.transferStatus.textContent = error instanceof SyntaxError
-      ? "Die Datei ist kein gültiges JSON."
-      : error.message || "Die Aufgabenliste konnte nicht importiert werden.";
+    showImportError(error);
+  }
+}
+
+function showImportError(error) {
+  elements.transferStatus.classList.add("error");
+  elements.transferStatus.textContent = error instanceof SyntaxError
+    ? "Die Datei ist kein gültiges JSON."
+    : error instanceof Error
+      ? error.message
+      : "Die Aufgabenliste konnte nicht importiert werden.";
+}
+
+function getGistId(gistUrl) {
+  let url;
+  try {
+    url = new URL(gistUrl);
+  } catch {
+    throw new Error("Bitte gib einen gültigen GitHub-Gist-Link ein.");
+  }
+  const path = url.pathname.split("/").filter(Boolean);
+  if (url.protocol !== "https:" || url.hostname !== "gist.github.com" ||
+    (path.length !== 1 && path.length !== 2) || !/^[a-f0-9]{5,64}$/i.test(path[path.length - 1])) {
+    throw new Error("Bitte gib einen gültigen Link zu einem GitHub-Gist ein.");
+  }
+  return path[path.length - 1];
+}
+
+async function importTasksFromGist(gistUrl) {
+  const button = elements.gistImportForm.querySelector("button");
+  button.disabled = true;
+  elements.transferStatus.classList.remove("error");
+  elements.transferStatus.textContent = "Gist wird geladen …";
+  try {
+    const gistId = getGistId(gistUrl);
+    const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (response.status === 404) {
+      throw new Error("Der Gist wurde nicht gefunden oder ist nicht öffentlich zugänglich.");
+    }
+    if (!response.ok) {
+      throw new Error(`Der Gist konnte nicht geladen werden (HTTP ${response.status}).`);
+    }
+    let gist;
+    try {
+      gist = await response.json();
+    } catch {
+      throw new Error("Die Antwort von GitHub konnte nicht gelesen werden.");
+    }
+    if (!gist || typeof gist !== "object" || !gist.files || typeof gist.files !== "object") {
+      throw new Error("Der Gist enthält keine JSON-Datei.");
+    }
+    const jsonFiles = Object.values(gist.files).filter((file) =>
+      file && typeof file.filename === "string" && file.filename.toLowerCase().endsWith(".json"));
+    if (jsonFiles.length !== 1) {
+      throw new Error("Der Gist muss genau eine JSON-Datei enthalten.");
+    }
+
+    const file = jsonFiles[0];
+    let content = file.content;
+    if (file.truncated || typeof content !== "string") {
+      if (typeof file.raw_url !== "string") {
+        throw new Error("Die JSON-Datei im Gist konnte nicht geladen werden.");
+      }
+      let rawUrl;
+      try {
+        rawUrl = new URL(file.raw_url);
+      } catch {
+        throw new Error("Die JSON-Datei im Gist konnte nicht geladen werden.");
+      }
+      if (rawUrl.hostname !== "gist.githubusercontent.com" || rawUrl.protocol !== "https:") {
+        throw new Error("Die JSON-Datei im Gist konnte nicht sicher geladen werden.");
+      }
+      const rawResponse = await fetch(rawUrl);
+      if (!rawResponse.ok) {
+        throw new Error(`Die JSON-Datei im Gist konnte nicht geladen werden (HTTP ${rawResponse.status}).`);
+      }
+      content = await rawResponse.text();
+    }
+    importTasksContent(content);
+  } catch (error) {
+    showImportError(error);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -925,6 +1016,10 @@ document.addEventListener("visibilitychange", () => {
 elements.exportButton.addEventListener("click", exportTasks);
 elements.importButton.addEventListener("click", () => elements.importFile.click());
 elements.importFile.addEventListener("change", () => importTasks(elements.importFile.files[0]));
+elements.gistImportForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  importTasksFromGist(elements.gistUrl.value.trim());
+});
 
 render();
 processScheduledTasks();

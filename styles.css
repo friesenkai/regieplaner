@@ -596,6 +596,11 @@ h1 {
 .transfer-button:disabled { color: #9aa19c; cursor: not-allowed; }
 .transfer-button svg { width: 15px; height: 15px; flex: 0 0 auto; }
 
+.gist-import { margin-top: 16px; }
+.gist-import-label { display: block; margin-bottom: 7px; color: var(--ink); font-size: 12px; font-weight: 650; }
+.gist-import-button { width: 100%; margin-top: 8px; }
+.gist-import-note { margin: 6px 2px 0; color: var(--muted); font-size: 10px; line-height: 1.4; }
+
 .transfer-status:empty { display: none; }
 
 .transfer-status {

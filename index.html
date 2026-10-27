@@ -74,6 +74,12 @@
             </button>
           </div>
           <input id="import-file" type="file" accept=".json,application/json" hidden>
+          <form class="gist-import" id="gist-import-form">
+            <label class="gist-import-label" for="gist-url">Oder per GitHub-Gist-Link importieren</label>
+            <input class="task-input" id="gist-url" type="url" maxlength="2048" placeholder="https://gist.github.com/…" autocomplete="url" required>
+            <button class="transfer-button gist-import-button" type="submit">Gist importieren</button>
+            <p class="gist-import-note">Der Gist muss öffentlich sein und genau eine JSON-Datei enthalten.</p>
+          </form>
           <p class="transfer-status" id="transfer-status" role="status" aria-live="polite"></p>
           <p class="storage-note">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h12l2 2V20H5z"/><path d="M8 4.5v5h8v-5M8 20v-7h8v7"/></svg>
